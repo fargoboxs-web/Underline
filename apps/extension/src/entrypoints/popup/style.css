@@ -1,0 +1,25 @@
+:root {
+  color-scheme: light;
+  font-family: "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  background: #f6f2e8;
+  color: #162316;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  background:
+    radial-gradient(circle at top right, rgba(227, 164, 113, 0.28), transparent 36%),
+    linear-gradient(180deg, #f8f3ea 0%, #efe4d2 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}

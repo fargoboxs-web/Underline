@@ -1,0 +1,9 @@
+node_modules
+dist
+.wxt
+.output
+coverage
+.DS_Store
+.env
+.env.local
+.underline-runtime.json
