@@ -1,0 +1,51 @@
+name: underline
+
+services:
+  - name: api
+    # Use the root-level Dockerfile (monorepo build)
+    dockerfile_path: Dockerfile
+    source_dir: /
+
+    # DigitalOcean will inject PORT=8080 and route traffic here
+    http_port: 8080
+
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 30
+      period_seconds: 30
+      timeout_seconds: 10
+      failure_threshold: 3
+      success_threshold: 1
+
+    envs:
+      # LLM backend URL — change to your provider's endpoint if not OpenAI
+      - key: LLM_API_URL
+        value: "https://api.openai.com/v1/chat/completions"
+        scope: RUN_TIME
+
+      # Your LLM provider API key — set as a secret in the DO console
+      - key: LLM_API_KEY
+        value: ""
+        scope: RUN_TIME
+        type: SECRET
+
+      # The model name to use (e.g. gpt-4o, gpt-3.5-turbo)
+      - key: LLM_MODEL
+        value: ""
+        scope: RUN_TIME
+
+      # LLM request timeout in milliseconds
+      - key: LLM_TIMEOUT_MS
+        value: "30000"
+        scope: RUN_TIME
+
+      # Path to runtime config file (provider config saved by the extension UI)
+      - key: RUNTIME_CONFIG_PATH
+        value: ".underline-runtime.json"
+        scope: RUN_TIME
+
+    routes:
+      - path: /
