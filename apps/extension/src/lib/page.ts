@@ -6,6 +6,20 @@ export interface ParagraphDescriptor {
   domPath: string;
   rawText: string;
   text: string;
+  tagName: string;
+  className: string;
+  parentTagName: string;
+  lang: string;
+  dir: string;
+}
+
+export interface BridgePresentationTemplate {
+  tagName: string;
+  className: string;
+  parentTagName: string;
+  lang: string;
+  dir: string;
+  inlineStyles: Record<string, string>;
 }
 
 const PARAGRAPH_SELECTOR = "article p, main p, p, li, blockquote";
@@ -106,7 +120,12 @@ export function getCandidateParagraphs(root: Document = document): ParagraphDesc
     .map((element) => ({
       element,
       rawText: element.textContent ?? "",
-      text: normalizeText(element.textContent ?? "")
+      text: normalizeText(element.textContent ?? ""),
+      tagName: element.tagName.toLowerCase(),
+      className: element.className,
+      parentTagName: element.parentElement?.tagName.toLowerCase() ?? "",
+      lang: element.lang || "",
+      dir: element.dir || ""
     }))
     .filter((candidate) => candidate.text.length >= 24)
     .map((candidate, index) => ({
@@ -139,4 +158,65 @@ export function buildPagePayload(normalizedUrl: string, fingerprint: string): Pa
     articleFingerprint: fingerprint,
     language: detectPageLanguage()
   };
+}
+
+const CLONED_STYLE_PROPERTIES = [
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "line-height",
+  "letter-spacing",
+  "text-align",
+  "color",
+  "text-indent",
+  "margin-top",
+  "margin-bottom",
+  "margin-left",
+  "margin-right",
+  "max-width"
+] as const;
+
+export function buildBridgePresentationTemplate(
+  paragraph: ParagraphDescriptor
+): BridgePresentationTemplate {
+  const computedStyle = window.getComputedStyle(paragraph.element);
+  const inlineStyles = Object.fromEntries(
+    CLONED_STYLE_PROPERTIES.map((propertyName) => [
+      propertyName,
+      computedStyle.getPropertyValue(propertyName)
+    ]).filter((entry) => entry[1])
+  );
+
+  return {
+    tagName: paragraph.tagName,
+    className: paragraph.className,
+    parentTagName: paragraph.parentTagName,
+    lang: paragraph.lang,
+    dir: paragraph.dir,
+    inlineStyles
+  };
+}
+
+export function applyBridgePresentationTemplate(
+  element: HTMLElement,
+  template: BridgePresentationTemplate
+): void {
+  if (template.className) {
+    element.className = template.className;
+  }
+
+  if (template.lang) {
+    element.lang = template.lang;
+  }
+
+  if (template.dir) {
+    element.dir = template.dir;
+  }
+
+  for (const [propertyName, propertyValue] of Object.entries(template.inlineStyles)) {
+    if (propertyValue) {
+      element.style.setProperty(propertyName, propertyValue);
+    }
+  }
 }

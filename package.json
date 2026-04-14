@@ -11,6 +11,8 @@
     "build": "npm run build --workspaces --if-present",
     "dev:api": "npm run dev --workspace @underline/api",
     "dev:extension": "npm run dev --workspace @underline/extension",
+    "demo:start": "bash ./scripts/demo-start.sh",
+    "demo:stop": "bash ./scripts/demo-stop.sh",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

@@ -17,6 +17,8 @@ import {
 import { buildBridgeSignal, buildContextWindow } from "../lib/context";
 import { MESSAGE_TYPES, type ContentRequest, type PageStateResponse } from "../lib/messages";
 import {
+  applyBridgePresentationTemplate,
+  buildBridgePresentationTemplate,
   buildPagePayload,
   computeArticleFingerprint,
   getCandidateParagraphs,
@@ -46,9 +48,6 @@ type HighlightRegistryLike = {
 const CONTENT_STYLE = `
   :root {
     --underline-highlight-bg: rgba(243, 184, 87, 0.42);
-    --underline-bridge-border: rgba(217, 116, 58, 0.65);
-    --underline-bridge-bg: rgba(250, 243, 232, 0.95);
-    --underline-bridge-text: rgba(24, 33, 24, 0.9);
     --underline-ui-bg: rgba(21, 27, 22, 0.92);
     --underline-ui-accent: rgba(233, 151, 90, 1);
     --underline-ui-muted: rgba(245, 236, 222, 0.78);
@@ -94,47 +93,67 @@ const CONTENT_STYLE = `
   }
 
   [${BRIDGE_ATTRIBUTE}="root"] {
-    margin: 1.1em 0;
-    padding: 0.95em 1.1em;
-    border-left: 3px solid var(--underline-bridge-border);
-    background: var(--underline-bridge-bg);
-    color: var(--underline-bridge-text);
-    font: inherit;
-    line-height: inherit;
     position: relative;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    isolation: isolate;
   }
 
-  [${BRIDGE_ATTRIBUTE}="header"] {
-    display: flex;
-    gap: 12px;
+  [${BRIDGE_ATTRIBUTE}="text"] {
+    color: inherit;
+  }
+
+  [${BRIDGE_ATTRIBUTE}="controls"] {
+    position: absolute;
+    top: 0;
+    right: 0;
+    transform: translateY(-72%);
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.5em;
-    font-size: 0.9em;
-    opacity: 0.78;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 2;
+    white-space: nowrap;
+    transition: opacity 120ms ease;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  [${BRIDGE_ATTRIBUTE}="root"]:hover [${BRIDGE_ATTRIBUTE}="controls"],
+  [${BRIDGE_ATTRIBUTE}="root"]:focus-within [${BRIDGE_ATTRIBUTE}="controls"] {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   [${BRIDGE_ATTRIBUTE}="pill"] {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
     border-radius: 999px;
-    padding: 0.18em 0.6em;
-    background: rgba(217, 116, 58, 0.12);
+    padding: 0.18em 0.55em;
     letter-spacing: 0.02em;
+    font-size: 0.7em;
+    line-height: 1;
+    opacity: 0.74;
   }
 
   [${BRIDGE_ATTRIBUTE}="actions"] {
     display: inline-flex;
-    gap: 8px;
+    gap: 6px;
   }
 
   [${BRIDGE_ATTRIBUTE}="actions"] button {
     border: none;
     background: transparent;
     color: inherit;
-    opacity: 0.72;
+    opacity: 0.78;
     font: inherit;
+    font-size: 0.72em;
+    line-height: 1;
     cursor: pointer;
     padding: 0;
   }
@@ -386,7 +405,7 @@ class ReaderModeController {
       }
 
       bridge.status = "active";
-      const bridgeElement = this.createBridgeElement(bridge);
+      const bridgeElement = this.createBridgeElement(bridge, paragraph);
       const previous = insertedAfter.get(paragraph.element) ?? paragraph.element;
       previous.after(bridgeElement);
       insertedAfter.set(paragraph.element, bridgeElement);
@@ -397,43 +416,53 @@ class ReaderModeController {
     }
   }
 
-  private createBridgeElement(bridge: BridgeRecord): HTMLElement {
-    const root = document.createElement("div");
+  private createBridgeElement(
+    bridge: BridgeRecord,
+    sourceParagraph: ParagraphDescriptor
+  ): HTMLElement {
+    const template = buildBridgePresentationTemplate(sourceParagraph);
+    const root = document.createElement(template.tagName);
     root.setAttribute(BRIDGE_ATTRIBUTE, "root");
     root.dataset.bridgeId = bridge.id;
+    applyBridgePresentationTemplate(root, template);
+    root.style.position = "relative";
 
-    const header = document.createElement("div");
-    header.setAttribute(BRIDGE_ATTRIBUTE, "header");
+    const text = document.createElement("span");
+    text.setAttribute(BRIDGE_ATTRIBUTE, "text");
+    text.textContent = bridge.bridgeText;
+
+    const controls = document.createElement("span");
+    controls.setAttribute(BRIDGE_ATTRIBUTE, "controls");
+    controls.setAttribute("aria-label", `${bridge.disclosureLabel} 操作`);
 
     const pill = document.createElement("span");
     pill.setAttribute(BRIDGE_ATTRIBUTE, "pill");
     pill.textContent = bridge.disclosureLabel;
 
-    const actions = document.createElement("div");
+    const actions = document.createElement("span");
     actions.setAttribute(BRIDGE_ATTRIBUTE, "actions");
 
     const regenerateButton = document.createElement("button");
     regenerateButton.type = "button";
     regenerateButton.textContent = "重生成";
-    regenerateButton.addEventListener("click", () => {
+    regenerateButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       void this.regenerateBridge(bridge.id);
     });
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.textContent = "删除";
-    removeButton.addEventListener("click", () => {
+    removeButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       void this.removeBridge(bridge.id);
     });
 
     actions.append(regenerateButton, removeButton);
-    header.append(pill, actions);
-
-    const body = document.createElement("p");
-    body.textContent = bridge.bridgeText;
-    body.style.margin = "0";
-
-    root.append(header, body);
+    controls.append(pill, actions);
+    root.append(text, controls);
     return root;
   }
 

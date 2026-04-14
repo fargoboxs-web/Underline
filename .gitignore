@@ -7,3 +7,5 @@ coverage
 .env
 .env.local
 .underline-runtime.json
+.underline-api.pid
+.logs

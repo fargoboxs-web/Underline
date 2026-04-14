@@ -10,21 +10,36 @@ describe("buildContextWindow", () => {
         domPath: "body/p[1]",
         rawText: "Paragraph 1",
         text: "Paragraph 1",
-        element: {} as HTMLParagraphElement
+        element: {} as HTMLParagraphElement,
+        tagName: "p",
+        className: "",
+        parentTagName: "body",
+        lang: "",
+        dir: ""
       },
       {
         index: 1,
         domPath: "body/p[2]",
         rawText: "Paragraph 2",
         text: "Paragraph 2",
-        element: {} as HTMLParagraphElement
+        element: {} as HTMLParagraphElement,
+        tagName: "p",
+        className: "",
+        parentTagName: "body",
+        lang: "",
+        dir: ""
       },
       {
         index: 2,
         domPath: "body/p[3]",
         rawText: "Paragraph 3",
         text: "Paragraph 3",
-        element: {} as HTMLParagraphElement
+        element: {} as HTMLParagraphElement,
+        tagName: "p",
+        className: "",
+        parentTagName: "body",
+        lang: "",
+        dir: ""
       }
     ];
 
