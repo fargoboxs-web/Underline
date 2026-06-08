@@ -1,6 +1,16 @@
-import type { ExplanationRequest, ExplanationResponse } from "@underline/shared";
+import type {
+  CleanArticleRequest,
+  CleanArticleResponse,
+  ExplanationRequest,
+  ExplanationResponse
+} from "@underline/shared";
 
 import type { LLMClient } from "./client";
+
+interface MockLLMOptions {
+  disclosureLabel?: string;
+  fallbackReason?: string;
+}
 
 function isChineseLanguage(request: ExplanationRequest): boolean {
   if (request.page.language.toLowerCase().startsWith("zh")) {
@@ -69,17 +79,30 @@ function buildBridgeText(request: ExplanationRequest, tags: string[]): string {
 }
 
 export class MockLLMClient implements LLMClient {
+  constructor(private readonly options: MockLLMOptions = {}) {}
+
+  async cleanArticle(_request: CleanArticleRequest): Promise<CleanArticleResponse> {
+    throw new Error("Clean article generation requires a configured real model.");
+  }
+
   async explain(request: ExplanationRequest): Promise<ExplanationResponse> {
     const allText = request.newHighlights.map((highlight) => highlight.text).join(" ");
     const inferredGapTags = inferGapTags(allText);
+    const chinese = isChineseLanguage(request);
 
     return {
       bridgeId: crypto.randomUUID(),
       insertAfterAnchor: request.newHighlights[request.newHighlights.length - 1].anchor,
       bridgeText: buildBridgeText(request, inferredGapTags),
-      disclosureLabel: isChineseLanguage(request) ? "AI 补充" : "AI bridge",
+      disclosureLabel: this.options.disclosureLabel ?? (chinese ? "AI 演示" : "AI demo"),
       inferredGapTags,
-      source: "mock"
+      source: "mock",
+      contextSource: request.cleanArticle ? "clean-article" : "nearby-context",
+      fallbackReason:
+        this.options.fallbackReason ??
+        (chinese
+          ? "未配置真实模型，当前使用本地 Demo 解释。"
+          : "No real model is configured, so the local demo explanation is being used.")
     };
   }
 }

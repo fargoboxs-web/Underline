@@ -8,7 +8,11 @@ import {
   type ProviderConfigResponse
 } from "@underline/shared";
 
-import { MESSAGE_TYPES, type PageStateResponse } from "../../lib/messages";
+import {
+  MESSAGE_TYPES,
+  type CleanArticlePageResponse,
+  type PageStateResponse
+} from "../../lib/messages";
 import {
   DEFAULT_SETTINGS,
   createDefaultProfile,
@@ -73,12 +77,21 @@ const primaryButtonStyle: CSSProperties = {
 };
 
 async function getActiveTab() {
-  const tabs = await chrome.tabs.query({
+  const currentWindowTabs = await chrome.tabs.query({
     active: true,
     currentWindow: true
   });
 
-  return tabs[0];
+  if (currentWindowTabs[0]?.id) {
+    return currentWindowTabs[0];
+  }
+
+  const lastFocusedTabs = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true
+  });
+
+  return lastFocusedTabs[0];
 }
 
 async function queryPageState(tabId: number): Promise<PageStateResponse | null> {
@@ -165,12 +178,12 @@ function ProviderStatus({ providerState }: { providerState: ProviderConfigRespon
   }
 
   if (!providerState.configured) {
-    return <div>当前是本地 Demo 模式，还没接入真实模型。</div>;
+    return <div>当前解释模式：AI demo。还没接入真实模型。</div>;
   }
 
   return (
     <div>
-      已连接模型：<strong>{providerState.model}</strong>
+      当前解释模式：AI bridge。已连接模型：<strong>{providerState.model}</strong>
     </div>
   );
 }
@@ -184,6 +197,7 @@ export function App({ variant = "popup" }: AppProps) {
   const [status, setStatus] = useState("正在读取当前页面状态…");
   const [saving, setSaving] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [cleaningArticle, setCleaningArticle] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
@@ -214,21 +228,29 @@ export function App({ variant = "popup" }: AppProps) {
 
       const tab = await getActiveTab();
 
-      if (!tab?.id || !tab.url?.startsWith("http")) {
-        setStatus("当前页面不支持。请在普通网页文章里打开插件。");
+      if (!tab?.id) {
+        setStatus("没有找到当前网页标签。请在普通网页文章里打开插件。");
         return;
       }
 
       setTabId(tab.id);
       const state = await queryPageState(tab.id);
 
+      if (state) {
+        setPageState(state);
+        setStatus("");
+        return;
+      }
+
+      if (tab.url && !tab.url.startsWith("http")) {
+        setStatus("当前页面不支持。请在普通网页文章里打开插件。");
+        return;
+      }
+
       if (!state) {
         setStatus("还没连上内容脚本。先刷新文章页，再打开插件。");
         return;
       }
-
-      setPageState(state);
-      setStatus("");
     })();
   }, [variant]);
 
@@ -293,6 +315,36 @@ export function App({ variant = "popup" }: AppProps) {
     await chrome.runtime.openOptionsPage();
   }
 
+  async function handleOpenCleanArticle() {
+    if (!tabId || !pageState || !providerState?.configured) {
+      return;
+    }
+
+    setCleaningArticle(true);
+    setStatus("正在准备纯净正文…");
+
+    try {
+      const response = (await chrome.tabs.sendMessage(tabId, {
+        type: MESSAGE_TYPES.cleanArticle
+      })) as CleanArticlePageResponse;
+
+      if (response.status !== "ready" || !response.cacheKey) {
+        throw new Error(response.error ?? "正文清洗失败。");
+      }
+
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL(
+          `article.html?key=${encodeURIComponent(response.cacheKey)}`
+        )
+      });
+      setStatus("已打开纯净正文。");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "正文清洗失败。");
+    } finally {
+      setCleaningArticle(false);
+    }
+  }
+
   if (variant === "popup") {
     return (
       <div style={shellStyle}>
@@ -326,8 +378,33 @@ export function App({ variant = "popup" }: AppProps) {
             <div>当前页：{pageState?.url ?? "未连接"}</div>
             <div>待解释高亮：{pageState?.pendingHighlights ?? 0}</div>
             <div>已插入桥接段：{pageState?.bridgeCount ?? 0}</div>
+            <div>最近解释模式：{pageState?.lastBridgeLabel ?? "尚无"}</div>
+            {pageState?.lastFallbackReason ? (
+              <div style={{ color: "#6a4220" }}>回退原因：{pageState.lastFallbackReason}</div>
+            ) : null}
             {status ? <div style={{ color: "#6a4220" }}>{status}</div> : null}
           </div>
+
+          <button
+            onClick={handleOpenCleanArticle}
+            disabled={!pageState || !providerState?.configured || cleaningArticle}
+            style={{
+              ...secondaryButtonStyle,
+              marginTop: 14,
+              cursor:
+                !pageState || !providerState?.configured || cleaningArticle
+                  ? "not-allowed"
+                  : "pointer",
+              opacity: !pageState || !providerState?.configured ? 0.62 : 1
+            }}
+          >
+            {cleaningArticle ? "正在准备正文…" : "查看正文"}
+          </button>
+          {!providerState?.configured ? (
+            <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45, opacity: 0.72 }}>
+              查看正文需要先配置真实模型。
+            </div>
+          ) : null}
         </section>
 
         <section style={cardStyle}>
@@ -341,6 +418,11 @@ export function App({ variant = "popup" }: AppProps) {
                 : "还没保存模型 API Key"}
             </div>
             <div>协议：{providerState?.wireApi ?? settings.providerWireApi}</div>
+            <div>
+              {providerState?.configured
+                ? "如果上游模型失败，页面会明确标成 AI demo 并显示回退原因。"
+                : "当前没有真实模型，页面里的解释会明确标成 AI demo。"}
+            </div>
             <div style={{ opacity: 0.78 }}>
               popup 会自动收起，不适合复制粘贴。去设置页里填 URL 和 Key 更顺手；就算真实模型连不上，解释时也会自动回退到 Demo。
             </div>
@@ -437,6 +519,8 @@ export function App({ variant = "popup" }: AppProps) {
       <section style={cardStyle}>
         <h2 style={{ margin: 0, fontSize: 16 }}>本地 API 与模型配置</h2>
         <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          <ProviderStatus providerState={providerState} />
+
           <label style={fieldStyle}>
             <span>本地 API Base URL</span>
             <input
@@ -468,6 +552,10 @@ export function App({ variant = "popup" }: AppProps) {
 
           <div style={{ fontSize: 12, lineHeight: 1.5, opacity: 0.72 }}>
             这里的本地 API 一般保持 `http://localhost:8787`。真正的模型 URL、Key、模型名填在下面。
+          </div>
+
+          <div style={{ fontSize: 12, lineHeight: 1.5, opacity: 0.72 }}>
+            真实模型可用时，文章里的桥接会标成 `AI bridge`。如果没配置模型或上游失败，会明确标成 `AI demo` 并给出回退原因。
           </div>
 
           <label style={fieldStyle}>

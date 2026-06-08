@@ -1,4 +1,9 @@
-import type { BridgeRecord, HighlightRecord, LearningProfile, ProfileSignal } from "@underline/shared";
+import type {
+  BridgeRecord,
+  HighlightRecord,
+  LearningProfile,
+  ProfileSignal
+} from "@underline/shared";
 
 export interface ExtensionSettings {
   apiBaseUrl: string;
@@ -20,13 +25,29 @@ export interface PageSession {
   updatedAt: string;
 }
 
+export interface CleanArticleCacheRecord {
+  normalizedUrl: string;
+  url: string;
+  title: string;
+  articleFingerprint: string;
+  rawTextFingerprint: string;
+  cleanedText: string;
+  cleanedAt: string;
+  truncated: boolean;
+}
+
 const SETTINGS_KEY = "underline:settings";
 const PROFILE_KEY = "underline:profile";
 const SIGNALS_KEY = "underline:signals";
 const PAGE_PREFIX = "underline:page:";
+const CLEAN_ARTICLE_PREFIX = "underline:clean-article:";
 
 function pageKey(normalizedUrl: string): string {
   return `${PAGE_PREFIX}${encodeURIComponent(normalizedUrl)}`;
+}
+
+export function cleanArticleKey(normalizedUrl: string, articleFingerprint: string): string {
+  return `${CLEAN_ARTICLE_PREFIX}${encodeURIComponent(normalizedUrl)}:${encodeURIComponent(articleFingerprint)}`;
 }
 
 function storageGet<T>(key: string): Promise<T | undefined> {
@@ -107,6 +128,31 @@ export async function savePageSession(session: PageSession): Promise<void> {
     ...session,
     updatedAt: new Date().toISOString()
   });
+}
+
+export async function getCleanArticleCache(
+  normalizedUrl: string,
+  articleFingerprint: string
+): Promise<CleanArticleCacheRecord | null> {
+  return (await storageGet<CleanArticleCacheRecord>(
+    cleanArticleKey(normalizedUrl, articleFingerprint)
+  )) ?? null;
+}
+
+export async function getCleanArticleByStorageKey(
+  storageKey: string
+): Promise<CleanArticleCacheRecord | null> {
+  if (!storageKey.startsWith(CLEAN_ARTICLE_PREFIX)) {
+    return null;
+  }
+
+  return (await storageGet<CleanArticleCacheRecord>(storageKey)) ?? null;
+}
+
+export async function saveCleanArticleCache(record: CleanArticleCacheRecord): Promise<string> {
+  const key = cleanArticleKey(record.normalizedUrl, record.articleFingerprint);
+  await storageSet(key, record);
+  return key;
 }
 
 export async function getSignals(limit = 8): Promise<ProfileSignal[]> {

@@ -1,46 +1,43 @@
 # Underline
 
-Chrome 阅读导师插件 MVP。它分成三个工作区：
+Underline 是一个本地优先的阅读导师插件。它不做逐词释义，而是在你划出卡住的词句后，插入一段同语言的桥接解释，帮你补上真正缺失的背景框架。
 
-- `apps/extension`: WXT + React 的浏览器插件
-- `apps/api`: TypeScript 后端，负责调用模型
+## 当前 v1 目标
+
+第一阶段只服务一个场景：
+
+1. 打开普通网页文章
+2. 开启导师模式
+3. 划出 1 到 3 处不懂的词句
+4. 如已配置真实模型，可从 popup 查看清洗后的正文
+5. 生成桥接解释
+6. 重生成或删除
+7. 刷新页面后状态保持稳定
+
+如果真实模型可用，桥接会显示为 `AI bridge`。如果没配置模型或上游失败，桥接会明确显示为 `AI demo`，并带出回退原因。
+真实模型模式会先把当前页可见文本清洗成正文并缓存在浏览器本地；清洗失败时会明确降级到邻近段落模式。
+
+## 仓库结构
+
+- `apps/extension`: WXT + React 浏览器扩展
+- `apps/api`: TypeScript 本地 API，负责模型调用和 Demo 回退
 - `packages/shared`: 共享 schema 和类型
+- `docs/prd/underline-self-use-v1.md`: 当前唯一 PRD
+- `docs/adr/`: 关键产品与工程决策
+- `issues/`: 本地 issue 看板
+- `skills/`: 项目级 Matt Pocock 风格 skills
 
-## 本地启动
+## 推荐启动方式
+
+默认只推荐这一种本地使用方式：
 
 1. 安装依赖：`npm install`
-2. 启动 API：`npm run dev:api`
-3. 启动扩展开发：`npm run dev:extension`
-
-WXT 启动后会生成 Chrome MV3 的构建产物。开发时去 Chrome 的 `chrome://extensions` 页面打开开发者模式，然后加载 `apps/extension/.output/chrome-mv3` 或 WXT 提示的产物目录。
-
-## 配置模型
-
-1. 打开插件 popup，先把“本地 API Base URL”保持为 `http://localhost:8787`
-2. 在同一个 popup 里填写：
-   - `模型 API URL`：你的中转站 `/v1/chat/completions` 地址
-   - `模型 API Key`
-   - `模型名`
-3. 先点“测试模型连接”，通过后再点“保存全部设置”
-
-保存后，本地后端会把运行时模型配置写进 `.underline-runtime.json`。这个文件已经被 `.gitignore` 忽略，不会被提交。
-
-## 一键测试
-
-第一次：
-
-1. 运行 `npm run demo:start`
-2. 打开 `chrome://extensions`
-3. 刷新 `Underline`
-4. 刷新要测试的文章页面
-
-之后每次测试：
-
-1. 运行 `npm run demo:start`
-2. 刷新 `Underline`
-3. 刷新文章页
-4. 打开插件 popup，点 `开启导师模式`
-5. 划词后点击右下角解释按钮
+2. 启动完整自用链路：`npm run demo:start`
+3. 打开 `chrome://extensions`
+4. 刷新 `Underline`
+5. 刷新要测试的文章页面
+6. 打开插件 popup，点击 `开启导师模式`
+7. 划词后点击右下角解释按钮
 
 停止本地 API：
 
@@ -48,19 +45,42 @@ WXT 启动后会生成 Chrome MV3 的构建产物。开发时去 Chrome 的 `chr
 
 说明：
 
-- `demo:start` 会先重新构建扩展产物，再确保本地 API 正在 `http://localhost:8787` 运行
-- `demo:start` 启动的是后台 API 进程，适合稳定测试；如果你在改后端代码，再单独用 `npm run dev:api`
+- `demo:start` 会先构建扩展和 API，再确保本地 API 在 `http://localhost:8787` 运行
 - 扩展导入目录固定是 `apps/extension/.output/chrome-mv3`
 - 本地 API 日志在 `.logs/underline-api.log`
+- `.underline-runtime.json` 只保存本机运行时模型配置，已被 `.gitignore` 忽略
 
-## 设计说明
+## 模型配置
 
-- 高亮、桥接解释、轻量用户画像都保存在本地 `chrome.storage.local`
-- 后端只接受结构化上下文，不抓整页 HTML
-- AI 输出只返回 JSON，真正插入页面的 DOM 由扩展端自己渲染
+1. 打开插件 popup，保持“本地 API Base URL”为 `http://localhost:8787`
+2. 进入设置页填写：
+   - `模型 API URL`
+   - `模型 API Key`
+   - `模型名`
+3. 先点“测试模型连接”，通过后再点“保存全部设置”
+
+没配置真实模型时，系统仍然能工作，但会明确走 `AI demo` 路径。
+
+## 开发工作流
+
+这个仓库按 Matt Pocock 的思路推进产品改造：
+
+1. 先用 `grill-me` 对齐真实需求
+2. 更新 `docs/prd/underline-self-use-v1.md`
+3. 把工作拆进 `issues/`
+4. 一次只做一个 AFK issue
+5. 用 `tdd` 落地
+6. 完成后把 issue 移到 `issues/done/`
+
+## 进阶开发
+
+如果你正在改代码，而不是高频使用产品：
+
+- `npm run dev:api`
+- `npm run dev:extension`
 
 ## 验证命令
 
-- `npm run build`
 - `npm run test`
 - `npm run typecheck`
+- `npm run build`

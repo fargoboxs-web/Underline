@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import {
+  CleanArticleRequestSchema,
+  CleanArticleResponseSchema,
   ExplanationRequestSchema,
   ExplanationResponseSchema,
   ProviderConfigResponseSchema,
@@ -16,12 +18,49 @@ import { MockLLMClient } from "./llm/mock";
 import { OpenAICompatibleClient } from "./llm/openai-compatible";
 import { RuntimeConfigStore } from "./runtime-config";
 
-function buildClient(providerConfig: ProviderConfig): LLMClient {
+export type LLMClientFactory = (
+  providerConfig: ProviderConfig,
+  request?: ExplanationRequest
+) => LLMClient;
+
+function isChineseRequest(request: ExplanationRequest): boolean {
+  if (request.page.language.toLowerCase().startsWith("zh")) {
+    return true;
+  }
+
+  return /[\u4e00-\u9fff]/.test(
+    request.contextWindow.paragraphs.map((paragraph) => paragraph.text).join(" ")
+  );
+}
+
+function buildUnconfiguredReason(request: ExplanationRequest): string {
+  return isChineseRequest(request)
+    ? "未配置真实模型，当前使用本地 Demo 解释。"
+    : "No real model is configured, so the local demo explanation is being used.";
+}
+
+function buildFallbackReason(
+  request: ExplanationRequest,
+  error: UpstreamLLMError
+): string {
+  return isChineseRequest(request)
+    ? `真实模型暂时不可用，已回退到本地 Demo：${error.message}`
+    : `The real model is temporarily unavailable, so Underline fell back to the local demo: ${error.message}`;
+}
+
+function buildClient(
+  providerConfig: ProviderConfig,
+  request?: ExplanationRequest
+): LLMClient {
   if (providerConfig.apiKey && providerConfig.model) {
     return new OpenAICompatibleClient(providerConfig);
   }
 
-  return new MockLLMClient();
+  return new MockLLMClient({
+    fallbackReason: request
+      ? buildUnconfiguredReason(request)
+      : "No real model is configured, so the local demo explanation is being used."
+  });
 }
 
 function isPrivilegedOrigin(origin: string | undefined): boolean {
@@ -30,7 +69,8 @@ function isPrivilegedOrigin(origin: string | undefined): boolean {
 
 export function buildServer(
   config: AppConfig,
-  runtimeStore = new RuntimeConfigStore(config)
+  runtimeStore = new RuntimeConfigStore(config),
+  clientFactory: LLMClientFactory = buildClient
 ) {
   const app = Fastify({
     logger: false
@@ -146,6 +186,44 @@ export function buildServer(
     }
   });
 
+  app.post("/v1/articles/clean", async (request, reply) => {
+    const parsedBody = CleanArticleRequestSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      reply.code(400);
+      return {
+        error: "Invalid clean article request.",
+        details: parsedBody.error.flatten()
+      };
+    }
+
+    const input = parsedBody.data;
+    const providerConfig = runtimeStore.getProviderConfig();
+
+    if (!providerConfig.apiKey || !providerConfig.model) {
+      reply.code(409);
+      return {
+        error: "Clean article generation requires a configured real model."
+      };
+    }
+
+    try {
+      const result = await clientFactory(providerConfig).cleanArticle(input);
+      const payload = CleanArticleResponseSchema.parse(result);
+
+      reply.code(200);
+      return payload;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unexpected clean article error.";
+
+      reply.code(error instanceof UpstreamLLMError ? 502 : 500);
+      return {
+        error: message
+      };
+    }
+  });
+
   app.post("/v1/explanations", async (request, reply) => {
     const parsedBody = ExplanationRequestSchema.safeParse(request.body);
 
@@ -157,26 +235,22 @@ export function buildServer(
       };
     }
 
+    const input = parsedBody.data as ExplanationRequest;
+
     try {
-      const result = await buildClient(runtimeStore.getProviderConfig()).explain(
-        parsedBody.data as ExplanationRequest
-      );
+      const result = await clientFactory(runtimeStore.getProviderConfig(), input).explain(input);
       const payload = ExplanationResponseSchema.parse(result);
 
       reply.code(200);
       return payload;
     } catch (error) {
       if (error instanceof UpstreamLLMError) {
-        const fallback = await new MockLLMClient().explain(parsedBody.data as ExplanationRequest);
+        const fallback = await new MockLLMClient({
+          disclosureLabel: isChineseRequest(input) ? "AI 演示" : "AI demo",
+          fallbackReason: buildFallbackReason(input, error)
+        }).explain(input);
         const payload = ExplanationResponseSchema.parse({
-          ...fallback,
-          disclosureLabel:
-            parsedBody.data.page.language.toLowerCase().startsWith("zh") ||
-            /[\u4e00-\u9fff]/.test(
-              parsedBody.data.contextWindow.paragraphs.map((paragraph) => paragraph.text).join(" ")
-            )
-              ? "AI 演示"
-              : "AI demo"
+          ...fallback
         });
 
         reply.code(200);
