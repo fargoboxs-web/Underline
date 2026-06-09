@@ -1,11 +1,19 @@
 import {
+  CleanArticleResponseSchema,
   ExplanationResponseSchema,
   type ProviderConfig,
+  type CleanArticleRequest,
+  type CleanArticleResponse,
   type ExplanationRequest,
   type ExplanationResponse
 } from "@underline/shared";
 
-import { buildSystemPrompt, buildUserPrompt } from "../prompt";
+import {
+  buildCleanArticleSystemPrompt,
+  buildCleanArticleUserPrompt,
+  buildSystemPrompt,
+  buildUserPrompt
+} from "../prompt";
 import type { LLMClient } from "./client";
 import { UpstreamLLMError } from "./errors";
 
@@ -244,7 +252,8 @@ export class OpenAICompatibleClient implements LLMClient {
   }
 
   private async createChatCompletion(
-    request: ExplanationRequest,
+    systemPrompt: string,
+    userPrompt: string,
     useJsonMode: boolean
   ): Promise<string> {
     const payload = await this.postJson(buildEndpoint(this.config.apiUrl, "chat-completions"), {
@@ -254,11 +263,11 @@ export class OpenAICompatibleClient implements LLMClient {
       messages: [
         {
           role: "system",
-          content: buildSystemPrompt()
+          content: systemPrompt
         },
         {
           role: "user",
-          content: buildUserPrompt(request)
+          content: userPrompt
         }
       ]
     });
@@ -273,7 +282,8 @@ export class OpenAICompatibleClient implements LLMClient {
   }
 
   private async createResponse(
-    request: ExplanationRequest,
+    systemPrompt: string,
+    userPrompt: string,
     useJsonMode: boolean
   ): Promise<string> {
     const payload = await this.postJson(buildEndpoint(this.config.apiUrl, "responses"), {
@@ -294,7 +304,7 @@ export class OpenAICompatibleClient implements LLMClient {
           content: [
             {
               type: "input_text",
-              text: buildSystemPrompt()
+              text: systemPrompt
             }
           ]
         },
@@ -303,7 +313,7 @@ export class OpenAICompatibleClient implements LLMClient {
           content: [
             {
               type: "input_text",
-              text: buildUserPrompt(request)
+              text: userPrompt
             }
           ]
         }
@@ -320,13 +330,14 @@ export class OpenAICompatibleClient implements LLMClient {
   }
 
   private async generateJsonText(
-    request: ExplanationRequest,
+    systemPrompt: string,
+    userPrompt: string,
     wireApi: WireApi
   ): Promise<string> {
     const run = (useJsonMode: boolean) =>
       wireApi === "responses"
-        ? this.createResponse(request, useJsonMode)
-        : this.createChatCompletion(request, useJsonMode);
+        ? this.createResponse(systemPrompt, userPrompt, useJsonMode)
+        : this.createChatCompletion(systemPrompt, userPrompt, useJsonMode);
 
     try {
       return await run(true);
@@ -339,13 +350,56 @@ export class OpenAICompatibleClient implements LLMClient {
     }
   }
 
+  async cleanArticle(request: CleanArticleRequest): Promise<CleanArticleResponse> {
+    const protocols = chooseProtocolOrder(this.config);
+    let lastError: unknown;
+
+    for (const wireApi of protocols) {
+      try {
+        const content = await this.generateJsonText(
+          buildCleanArticleSystemPrompt(),
+          buildCleanArticleUserPrompt(request),
+          wireApi
+        );
+        const parsed = extractJson(content) as Record<string, unknown>;
+        const cleanedText =
+          typeof parsed.cleanedText === "string" ? parsed.cleanedText.trim() : "";
+        const usable = cleanedText.length >= 80;
+
+        return CleanArticleResponseSchema.parse({
+          articleFingerprint: request.page.articleFingerprint,
+          rawTextFingerprint: request.rawTextFingerprint,
+          cleanedText,
+          cleanedAt: new Date().toISOString(),
+          usable,
+          truncated: request.truncated,
+          failureReason: usable
+            ? undefined
+            : "The model returned too little clean article text."
+        });
+      } catch (error) {
+        lastError = error;
+
+        if (!(error instanceof UpstreamLLMError) || !shouldTryAlternateProtocol(error)) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Clean article request failed.");
+  }
+
   async explain(request: ExplanationRequest): Promise<ExplanationResponse> {
     const protocols = chooseProtocolOrder(this.config);
     let lastError: unknown;
 
     for (const wireApi of protocols) {
       try {
-        const content = await this.generateJsonText(request, wireApi);
+        const content = await this.generateJsonText(
+          buildSystemPrompt(),
+          buildUserPrompt(request),
+          wireApi
+        );
         const parsed = extractJson(content) as Record<string, unknown>;
 
         return ExplanationResponseSchema.parse({
@@ -354,7 +408,12 @@ export class OpenAICompatibleClient implements LLMClient {
           bridgeText: parsed.bridgeText,
           disclosureLabel: parsed.disclosureLabel ?? "AI bridge",
           inferredGapTags: parsed.inferredGapTags ?? [],
-          source: "ai"
+          source: "ai",
+          contextSource: request.cleanArticle ? "clean-article" : "nearby-context",
+          contextWarning:
+            request.cleanArticle?.highlightMatched === false
+              ? "Highlighted text was not found in the clean article body."
+              : undefined
         });
       } catch (error) {
         lastError = error;

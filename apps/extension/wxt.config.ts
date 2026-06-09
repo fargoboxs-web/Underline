@@ -7,7 +7,7 @@ export default defineConfig({
     name: "Underline",
     description:
       "Highlight confusing passages and ask AI to insert a bridge paragraph that teaches the missing background knowledge.",
-    permissions: ["storage", "activeTab"],
+    permissions: ["storage", "activeTab", "tabs"],
     host_permissions: ["http://*/*", "https://*/*"],
     options_page: "options.html",
     action: {

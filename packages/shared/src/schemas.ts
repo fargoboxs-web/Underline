@@ -57,7 +57,10 @@ export const BridgeRecordSchema = z.object({
   inferredGapTags: z.array(z.string().min(1)).default([]),
   createdAt: z.string().datetime(),
   status: z.enum(["active", "removed", "anchor-missing"]).default("active"),
-  source: z.enum(["ai", "mock"]).default("ai")
+  source: z.enum(["ai", "mock"]).default("ai"),
+  contextSource: z.enum(["clean-article", "nearby-context"]).default("nearby-context"),
+  contextWarning: z.string().optional(),
+  fallbackReason: z.string().optional()
 });
 
 export const ContextParagraphSchema = z.object({
@@ -81,11 +84,36 @@ export const PagePayloadSchema = z.object({
   language: z.string().min(1)
 });
 
+export const CleanArticleRequestSchema = z.object({
+  page: PagePayloadSchema,
+  rawText: z.string().min(1).max(50_000),
+  rawTextFingerprint: z.string().min(1),
+  truncated: z.boolean().default(false)
+});
+
+export const CleanArticleResponseSchema = z.object({
+  articleFingerprint: z.string().min(1),
+  rawTextFingerprint: z.string().min(1),
+  cleanedText: z.string().default(""),
+  cleanedAt: z.string().datetime(),
+  usable: z.boolean(),
+  truncated: z.boolean().default(false),
+  failureReason: z.string().optional()
+});
+
+export const CleanArticleContextSchema = z.object({
+  articleFingerprint: z.string().min(1),
+  cleanedText: z.string().min(1),
+  cleanedAt: z.string().datetime(),
+  highlightMatched: z.boolean().optional()
+});
+
 export const ExplanationRequestSchema = z.object({
   page: PagePayloadSchema,
   profile: LearningProfileSchema,
   newHighlights: z.array(HighlightRecordSchema).min(1),
   contextWindow: ContextWindowSchema,
+  cleanArticle: CleanArticleContextSchema.optional(),
   priorGapSignals: z.array(ProfileSignalSchema).default([])
 });
 
@@ -95,7 +123,10 @@ export const ExplanationResponseSchema = z.object({
   bridgeText: z.string().min(1),
   disclosureLabel: z.string().min(1),
   inferredGapTags: z.array(z.string().min(1)).default([]),
-  source: z.enum(["ai", "mock"]).default("ai")
+  source: z.enum(["ai", "mock"]).default("ai"),
+  contextSource: z.enum(["clean-article", "nearby-context"]).default("nearby-context"),
+  contextWarning: z.string().optional(),
+  fallbackReason: z.string().optional()
 });
 
 export const ProviderConfigSchema = z.object({
@@ -131,6 +162,9 @@ export type BridgeRecord = z.infer<typeof BridgeRecordSchema>;
 export type ContextParagraph = z.infer<typeof ContextParagraphSchema>;
 export type ContextWindow = z.infer<typeof ContextWindowSchema>;
 export type PagePayload = z.infer<typeof PagePayloadSchema>;
+export type CleanArticleRequest = z.infer<typeof CleanArticleRequestSchema>;
+export type CleanArticleResponse = z.infer<typeof CleanArticleResponseSchema>;
+export type CleanArticleContext = z.infer<typeof CleanArticleContextSchema>;
 export type ExplanationRequest = z.infer<typeof ExplanationRequestSchema>;
 export type ExplanationResponse = z.infer<typeof ExplanationResponseSchema>;
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;

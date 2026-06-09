@@ -24,12 +24,13 @@ export interface BridgePresentationTemplate {
 
 const PARAGRAPH_SELECTOR = "article p, main p, p, li, blockquote";
 const MANAGED_SELECTOR = "[data-underline-ui], [data-underline-bridge]";
+export const CLEAN_ARTICLE_TEXT_LIMIT = 50_000;
 
 export function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function hashString(value: string): string {
+export function hashString(value: string): string {
   let hash = 5381;
 
   for (let index = 0; index < value.length; index += 1) {
@@ -37,6 +38,14 @@ function hashString(value: string): string {
   }
 
   return Math.abs(hash >>> 0).toString(16);
+}
+
+function normalizeVisibleText(value: string): string {
+  return value
+    .split(/\n+/)
+    .map((line) => normalizeText(line))
+    .filter(Boolean)
+    .join("\n");
 }
 
 function isVisible(element: HTMLElement): boolean {
@@ -138,6 +147,20 @@ export function getCandidateParagraphs(root: Document = document): ParagraphDesc
 export function computeArticleFingerprint(paragraphs: ParagraphDescriptor[]): string {
   const sample = paragraphs.slice(0, 12).map((paragraph) => paragraph.text).join("||");
   return hashString(sample || document.title || location.pathname);
+}
+
+export function captureVisiblePageText(
+  limit = CLEAN_ARTICLE_TEXT_LIMIT
+): { rawText: string; rawTextFingerprint: string; truncated: boolean } {
+  const rawText = normalizeVisibleText(document.body?.innerText ?? document.body?.textContent ?? "");
+  const truncated = rawText.length > limit;
+  const cappedText = truncated ? rawText.slice(0, limit) : rawText;
+
+  return {
+    rawText: cappedText,
+    rawTextFingerprint: hashString(rawText || document.title || location.href),
+    truncated
+  };
 }
 
 export function detectPageLanguage(root: Document = document): string {

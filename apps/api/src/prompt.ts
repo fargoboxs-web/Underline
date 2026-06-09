@@ -1,4 +1,4 @@
-import type { ExplanationRequest } from "@underline/shared";
+import type { CleanArticleRequest, ExplanationRequest } from "@underline/shared";
 
 function formatPreference(preference: ExplanationRequest["profile"]["explanationPreference"]): string {
   if (preference === "analogy") {
@@ -27,6 +27,17 @@ export function buildSystemPrompt(): string {
   ].join(" ");
 }
 
+export function buildCleanArticleSystemPrompt(): string {
+  return [
+    "You clean visible webpage text into the main article body for a private reading assistant.",
+    "Remove navigation, menus, cookie banners, ads, sharing widgets, comments, related links, footers, repeated headers, and UI labels.",
+    "Preserve the author's article text in the same language and original order.",
+    "Do not summarize, translate, explain, or add new content.",
+    "If the page text does not contain a usable article body, return an empty cleanedText string.",
+    "Return strict JSON with exactly this key: cleanedText."
+  ].join(" ");
+}
+
 export function buildUserPrompt(input: ExplanationRequest): string {
   return JSON.stringify(
     {
@@ -47,7 +58,13 @@ export function buildUserPrompt(input: ExplanationRequest): string {
         text: highlight.text,
         paragraphIndex: highlight.anchor.paragraphIndex
       })),
-      contextWindow: input.contextWindow.paragraphs.map((paragraph) => ({
+      cleanArticle: input.cleanArticle
+        ? {
+            text: input.cleanArticle.cleanedText,
+            highlightMatched: input.cleanArticle.highlightMatched ?? null
+          }
+        : null,
+      nearbyContextWindow: input.contextWindow.paragraphs.map((paragraph) => ({
         index: paragraph.index,
         text: paragraph.text
       })),
@@ -57,10 +74,37 @@ export function buildUserPrompt(input: ExplanationRequest): string {
       })),
       task: [
         "Infer the deeper missing background knowledge behind the highlights.",
+        input.cleanArticle
+          ? "Use the clean article body as the primary source context."
+          : "Use the nearby context window as the source context.",
         "Write a single bridge paragraph that teaches that missing frame.",
         "Keep it concise enough to fit naturally inside an article.",
         "If a short connecting sentence helps, include it inside the same paragraph.",
         "Choose 1 to 3 inferred gap tags in kebab-case."
+      ]
+    },
+    null,
+    2
+  );
+}
+
+export function buildCleanArticleUserPrompt(input: CleanArticleRequest): string {
+  return JSON.stringify(
+    {
+      page: {
+        title: input.page.title,
+        hostname: input.page.hostname,
+        url: input.page.url,
+        language: input.page.language,
+        truncated: input.truncated
+      },
+      visibleText: input.rawText,
+      task: [
+        "Extract only the main article body from visibleText.",
+        "Keep the article in its original language.",
+        "Keep paragraphs separated by a single blank line.",
+        "Remove non-article page chrome, comments, ads, related links, and duplicated UI text.",
+        "Return only JSON with cleanedText."
       ]
     },
     null,
