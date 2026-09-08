@@ -84,3 +84,7 @@ Underline 是一个本地优先的阅读导师插件。它不做逐词释义，�
 - `npm run test`
 - `npm run typecheck`
 - `npm run build`
+
+## 协作练习说明
+
+本段由 PR 练习添加：用小改动演示「分支 → Pull Request → Review → Merge」完整流程。
