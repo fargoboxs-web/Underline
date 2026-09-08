@@ -85,6 +85,14 @@ Underline 是一个本地优先的阅读导师插件。它不做逐词释义，�
 - `npm run typecheck`
 - `npm run build`
 
+## 如何用 GitHub Issue 提需求
+
+想改功能、修 bug、补文档时，先开 [Issue](https://github.com/fargoboxs-web/Underline/issues)，再动手：
+
+1. **开 Issue**：写清楚背景、要做什么、怎么算完成
+2. **开分支**：从 `main` 拉分支（可用 `docs/issue-编号-简述` 或 `fix/issue-编号-简述`）
+3. **开 Pull Request**：把改动合回 `main`；在 PR 描述里写 `Closes #编号`，merge 后会自动关闭对应 Issue
+
 ## 协作练习说明
 
 本段由 PR 练习添加：用小改动演示「分支 → Pull Request → Review → Merge」完整流程。
